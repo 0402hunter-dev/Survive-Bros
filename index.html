@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Survive Bros - Web Edition</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background: #0a0a14;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: #fff;
+        }
+        
+        canvas {
+            border: 3px solid #2ecb71;
+            background: #141828;
+            box-shadow: 0 0 20px rgba(46, 203, 113, 0.3);
+        }
+        
+        .container {
+            text-align: center;
+        }
+        
+        h1 {
+            color: #2ecb71;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px rgba(46, 203, 113, 0.5);
+        }
+        
+        #loading {
+            color: #f1c40f;
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+        
+        .controls {
+            margin-top: 20px;
+            color: #aaa;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 SURVIVE BROS - Web Edition</h1>
+        <div id="loading">Loading game...</div>
+        <canvas id="gameCanvas" width="1280" height="720"></canvas>
+        <div class="controls">
+            <p><strong>Controls:</strong> WASD/Arrow Keys to Move | Click to Attack</p>
+            <p>Press B to Pause | M for Multiplayer | Z to Build Walls</p>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
