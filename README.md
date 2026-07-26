@@ -160,6 +160,6 @@ Survive the waves, defeat the bosses, and reach the highest wave possible!
 
 ---
 
-**Play Now**: [Survive Bros on Render](https://github.com/0402hunter-dev/Survive-Bros)
+**Play Now**: [Survive Bros on Render](https://survive-bros-2.onrender.com)
 
 *Built with ❤️ using vanilla JavaScript and HTML5 Canvas*
