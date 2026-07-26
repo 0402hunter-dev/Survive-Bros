@@ -40,7 +40,8 @@ A thrilling survival game where you defend against waves of enemies, harvest res
 1. **Option A: Deploy from GitHub (Recommended)**
    - Push this repository to GitHub
    - Go to https://render.com and sign in
-   - Click "New +" → "Web Service"
+   - Click "New +" → "Static Site
+   - "
    - Connect your GitHub repository
    - Configure:
      - **Name**: `survive-bros`
