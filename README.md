@@ -143,10 +143,6 @@ Survive-Bros/
 - **Resolution**: 1280×720 (locked aspect ratio)
 - **Performance**: 60 FPS target with requestAnimationFrame
 
-## 📝 Original Version
-
-The original Python/Pygame version is in the `code` file. This web version is a complete JavaScript rewrite for browser compatibility.
-
 ## 🤝 Contributing
 
 Found a bug? Have an idea? 
