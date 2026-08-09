@@ -17,6 +17,13 @@ const WeaponType = {
   BOW: 'bow'
 };
 
+// Power-up Types
+const PowerUpType = {
+  HEALTH: 'health',
+  DAMAGE: 'damage',
+  SPEED: 'speed'
+};
+
 // Colors
 const Colors = {
   BLACK: '#000000',
@@ -25,13 +32,17 @@ const Colors = {
   PLAYER2: '#ff00ff',
   ENEMY: '#e74c3c',
   BOSS: '#ff4757',
+  MINIBOSS: '#ff9f43',
   TREE_TRUNK: '#3e2723',
   TREE_LEAF: '#1b4d2e',
   PRIMARY: '#2ecb71',
   DANGER: '#ff4757',
   ACCENT: '#f1c40f',
   DARK_BG: '#141e1e',
-  LIGHT_BG: '#1e1e28'
+  LIGHT_BG: '#1e1e28',
+  POWERUP_HEALTH: '#ff6b6b',
+  POWERUP_DAMAGE: '#ffa502',
+  POWERUP_SPEED: '#64dfdf'
 };
 
 // Weapons
@@ -71,20 +82,29 @@ const CONFIG = {
   INITIAL_WOOD: 20,
   WALL_COST: 10,
   WALL_HP: 200,
+  WALL_SIZE: 30,
   WALL_DAMAGE: 0.5,
   ENEMY_KILL_REWARD: 5,
   BOSS_KILL_REWARD: 150,
+  MINIBOSS_KILL_REWARD: 75,
   TREE_KILL_REWARD: 10,
   TREE_HARVEST_DISTANCE: 60,
   ENEMY_BASE_HP: 40,
   ENEMY_HP_SCALE: 10,
   BOSS_HP_SCALE_BASE: 500,
+  MINIBOSS_HP_SCALE_BASE: 250,
   SPAWN_RATE_BASE: 0.02,
   SPAWN_RATE_WAVE_SCALE: 0.005,
   DAY_LENGTH: 360,
   NIGHT_START: 180,
-  BOSS_SPAWN_INTERVAL: 3,
-  TREE_COUNT: 15
+  MINIBOSS_SPAWN_INTERVAL: 3,
+  BOSS_SPAWN_INTERVAL: 10,
+  TREE_COUNT: 15,
+  BOSS_MELEE_RANGE: 50,
+  MINIBOSS_MELEE_RANGE: 45,
+  BLOCK_COOLDOWN: 30,
+  BLOCK_DURATION: 8,
+  POWERUP_SPAWN_CHANCE: 0.1
 };
 
 class ParticleSystem {
@@ -186,7 +206,10 @@ class SurviveBros {
       speed: CONFIG.PLAYER_SPEED,
       swing: 0,
       size: 15,
-      attackCooldown: 0
+      attackCooldown: 0,
+      blocking: false,
+      blockCooldown: 0,
+      damageMultiplier: 1.0
     };
 
     this.player2 = {
@@ -201,7 +224,10 @@ class SurviveBros {
       speed: CONFIG.PLAYER_SPEED,
       swing: 0,
       size: 15,
-      attackCooldown: 0
+      attackCooldown: 0,
+      blocking: false,
+      blockCooldown: 0,
+      damageMultiplier: 1.0
     };
 
     this.trees = [];
@@ -209,6 +235,9 @@ class SurviveBros {
     this.arrows = [];
     this.walls = [];
     this.boss = null;
+    this.miniboss = null;
+    this.powerups = [];
+    this.waveComplete = false;
 
     this.setupEventListeners();
     this.initializeWorld();
@@ -216,15 +245,25 @@ class SurviveBros {
 
   setupEventListeners() {
     document.addEventListener('keydown', (e) => {
-      this.keysPressed.add(e.key.toLowerCase());
+      const key = e.key.toLowerCase();
+      this.keysPressed.add(key);
+
       if (e.key === ' ' && this.state === GameState.TITLE) {
         this.startGame();
       }
       if (e.key === ' ' && this.state === GameState.END) {
         this.startGame();
       }
-      if (e.key.toLowerCase() === 'z') {
+      if (key === 'z') {
         this.placeWall(this.player.x, this.player.y);
+      }
+      // Switch weapons with 'x' key
+      if (key === 'x') {
+        this.switchWeapon(this.player);
+      }
+      // Block with 'c' key
+      if (key === 'c') {
+        this.startBlock(this.player);
       }
     });
 
@@ -262,7 +301,7 @@ class SurviveBros {
   }
 
   spawnEnemy() {
-    if (this.time <= CONFIG.NIGHT_START || this.boss) return;
+    if (this.time <= CONFIG.NIGHT_START || this.boss || this.miniboss) return;
     if (Math.random() > CONFIG.SPAWN_RATE_BASE + this.wave * CONFIG.SPAWN_RATE_WAVE_SCALE) return;
 
     const edges = [
@@ -280,6 +319,31 @@ class SurviveBros {
       onFire: 0,
       size: 12
     });
+  }
+
+  spawnMiniBoss() {
+    if (this.wave % CONFIG.MINIBOSS_SPAWN_INTERVAL !== 0) return;
+    if (this.wave % CONFIG.BOSS_SPAWN_INTERVAL === 0) return; // Boss takes priority
+    if (this.miniboss) return;
+
+    const level = Math.floor(this.wave / CONFIG.MINIBOSS_SPAWN_INTERVAL);
+    const hp = CONFIG.MINIBOSS_HP_SCALE_BASE * level;
+
+    this.miniboss = {
+      x: SCREEN_WIDTH / 2,
+      y: -100,
+      hp: hp,
+      maxHp: hp,
+      angle: 0,
+      level: level,
+      speed: 2.0 + level * 0.1,
+      damage: 0.8 + level * 0.2,
+      onFire: 0,
+      attackCooldown: 0,
+      size: 24
+    };
+
+    this.particleSystem.addExplosion(this.miniboss.x, this.miniboss.y, Colors.MINIBOSS, 12);
   }
 
   spawnBoss() {
@@ -300,10 +364,51 @@ class SurviveBros {
       damage: CONFIG.BOSS_DAMAGE_BASE + level * 0.3,
       onFire: 0,
       attackCooldown: 0,
-      size: 30
+      size: 30,
+      hasSword: true // Boss now has sword for melee attacks
     };
 
     this.particleSystem.addExplosion(this.boss.x, this.boss.y, Colors.BOSS, 15);
+  }
+
+  placeWall(x, y) {
+    if (this.player.wood < CONFIG.WALL_COST) return;
+
+    // Check if too close to player or another wall
+    for (const wall of this.walls) {
+      if (Math.hypot(wall.x - x, wall.y - y) < 50) {
+        return; // Too close to another wall
+      }
+    }
+
+    this.walls.push({
+      x: x,
+      y: y,
+      hp: CONFIG.WALL_HP,
+      maxHp: CONFIG.WALL_HP,
+      size: CONFIG.WALL_SIZE
+    });
+
+    this.player.wood -= CONFIG.WALL_COST;
+  }
+
+  switchWeapon(player) {
+    const weapons = Object.keys(WEAPONS);
+    const currentIndex = weapons.indexOf(player.weaponKey);
+    const nextIndex = (currentIndex + 1) % weapons.length;
+    player.weaponKey = weapons[nextIndex];
+    player.weapon = WEAPONS[player.weaponKey];
+    player.attackCooldown = 0; // Reset cooldown when switching
+    this.particleSystem.addExplosion(player.x, player.y, Colors.ACCENT, 5);
+  }
+
+  startBlock(player) {
+    if (player.blockCooldown > 0) return;
+    player.blocking = true;
+    setTimeout(() => {
+      player.blocking = false;
+      player.blockCooldown = CONFIG.BLOCK_COOLDOWN;
+    }, CONFIG.BLOCK_DURATION * 16); // 16ms per frame
   }
 
   // New unified attack handler for players
@@ -330,14 +435,15 @@ class SurviveBros {
     const weapon = player.weapon;
     player.swing = 8; // frames of swing animation
 
+    const damage = weapon.atk * player.damageMultiplier;
+
     // Damage enemies within range
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
       const dist = Math.hypot(player.x - enemy.x, player.y - enemy.y);
       if (dist <= weapon.range) {
-        enemy.hp -= weapon.atk;
+        enemy.hp -= damage;
         this.particleSystem.addExplosion(enemy.x, enemy.y, Colors.ACCENT, 6);
-        // Kill/award handled in updateEnemies when hp <= 0
       }
     }
 
@@ -345,8 +451,17 @@ class SurviveBros {
     if (this.boss) {
       const distB = Math.hypot(player.x - this.boss.x, player.y - this.boss.y);
       if (distB <= weapon.range) {
-        this.boss.hp -= weapon.atk;
+        this.boss.hp -= damage;
         this.particleSystem.addExplosion(this.boss.x, this.boss.y, Colors.ACCENT, 10);
+      }
+    }
+
+    // Damage miniboss if in range
+    if (this.miniboss) {
+      const distM = Math.hypot(player.x - this.miniboss.x, player.y - this.miniboss.y);
+      if (distM <= weapon.range) {
+        this.miniboss.hp -= damage;
+        this.particleSystem.addExplosion(this.miniboss.x, this.miniboss.y, Colors.ACCENT, 8);
       }
     }
   }
@@ -357,6 +472,7 @@ class SurviveBros {
     const spread = 0.1; // radians total spread when firing multiple arrows
     const arrowSpeed = weapon.arrowSpeed || CONFIG.ARROW_SPEED;
     const baseAngle = player.angle;
+    const damage = weapon.atk * player.damageMultiplier;
 
     for (let i = 0; i < projectiles; i++) {
       const t = projectiles === 1 ? 0.5 : i / (projectiles - 1);
@@ -365,8 +481,8 @@ class SurviveBros {
         x: player.x + Math.cos(angle) * 10,
         y: player.y + Math.sin(angle) * 10,
         angle: angle,
-        life: Math.floor((weapon.range || 400) / arrowSpeed) * 4, // generous life
-        atk: weapon.atk,
+        life: Math.floor((weapon.range || 400) / arrowSpeed) * 4,
+        atk: damage,
         speed: arrowSpeed
       };
       this.arrows.push(arrow);
@@ -395,6 +511,7 @@ class SurviveBros {
 
     if (player.attackCooldown > 0) player.attackCooldown--;
     if (player.swing > 0) player.swing--;
+    if (player.blockCooldown > 0) player.blockCooldown--;
   }
 
   updateEnemies() {
@@ -411,14 +528,35 @@ class SurviveBros {
         enemy.y += (dy / dist) * CONFIG.ENEMY_SPEED;
       }
 
-      // Damage player on contact
-      if (dist < 30) {
+      // Damage player on contact (unless blocking)
+      if (dist < 30 && !this.player.blocking) {
         this.player.hp -= CONFIG.ENEMY_DAMAGE;
+      } else if (dist < 30 && this.player.blocking) {
+        this.particleSystem.addExplosion(this.player.x, this.player.y, Colors.PRIMARY, 4);
+      }
+
+      // Check wall collisions
+      for (let j = this.walls.length - 1; j >= 0; j--) {
+        const wall = this.walls[j];
+        const wallDist = Math.hypot(enemy.x - wall.x, enemy.y - wall.y);
+        if (wallDist < 30) {
+          wall.hp -= CONFIG.WALL_DAMAGE;
+          if (wall.hp <= 0) {
+            this.walls.splice(j, 1);
+            this.particleSystem.addExplosion(wall.x, wall.y, '#5d4037', 8);
+          }
+        }
       }
 
       if (enemy.hp <= 0) {
         this.player.wood += CONFIG.ENEMY_KILL_REWARD;
         this.particleSystem.addExplosion(enemy.x, enemy.y, Colors.ENEMY, 10);
+        
+        // Chance to spawn power-up
+        if (Math.random() < CONFIG.POWERUP_SPAWN_CHANCE) {
+          this.spawnPowerUp(enemy.x, enemy.y);
+        }
+        
         this.enemies.splice(i, 1);
       }
     }
@@ -439,18 +577,130 @@ class SurviveBros {
 
     this.boss.angle = Math.atan2(dy, dx);
 
-    if (this.boss.attackCooldown <= 0 && dist < 100) {
-      this.player.hp -= this.boss.damage;
+    // Boss melee attack with sword (reduced range)
+    if (this.boss.attackCooldown <= 0 && dist < CONFIG.BOSS_MELEE_RANGE) {
+      if (!this.player.blocking) {
+        this.player.hp -= this.boss.damage;
+      } else {
+        this.particleSystem.addExplosion(this.player.x, this.player.y, Colors.PRIMARY, 6);
+      }
       this.boss.attackCooldown = 30;
       this.particleSystem.addExplosion(this.player.x, this.player.y, Colors.DANGER, 8);
     } else {
       this.boss.attackCooldown--;
     }
 
+    // Check wall collisions
+    for (let j = this.walls.length - 1; j >= 0; j--) {
+      const wall = this.walls[j];
+      const wallDist = Math.hypot(this.boss.x - wall.x, this.boss.y - wall.y);
+      if (wallDist < 40) {
+        wall.hp -= CONFIG.WALL_DAMAGE * 2; // Boss does more damage to walls
+        if (wall.hp <= 0) {
+          this.walls.splice(j, 1);
+          this.particleSystem.addExplosion(wall.x, wall.y, '#5d4037', 10);
+        }
+      }
+    }
+
     if (this.boss.hp <= 0) {
       this.player.wood += CONFIG.BOSS_KILL_REWARD;
       this.particleSystem.addExplosion(this.boss.x, this.boss.y, Colors.BOSS, 25);
       this.boss = null;
+    }
+  }
+
+  updateMiniBoss() {
+    if (!this.miniboss) return;
+
+    const target = this.player;
+    const dx = target.x - this.miniboss.x;
+    const dy = target.y - this.miniboss.y;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist > 0) {
+      this.miniboss.x += (dx / dist) * this.miniboss.speed;
+      this.miniboss.y += (dy / dist) * this.miniboss.speed;
+    }
+
+    this.miniboss.angle = Math.atan2(dy, dx);
+
+    // Miniboss attack
+    if (this.miniboss.attackCooldown <= 0 && dist < CONFIG.MINIBOSS_MELEE_RANGE) {
+      if (!this.player.blocking) {
+        this.player.hp -= this.miniboss.damage;
+      } else {
+        this.particleSystem.addExplosion(this.player.x, this.player.y, Colors.PRIMARY, 5);
+      }
+      this.miniboss.attackCooldown = 40;
+      this.particleSystem.addExplosion(this.player.x, this.player.y, Colors.DANGER, 6);
+    } else {
+      this.miniboss.attackCooldown--;
+    }
+
+    // Check wall collisions
+    for (let j = this.walls.length - 1; j >= 0; j--) {
+      const wall = this.walls[j];
+      const wallDist = Math.hypot(this.miniboss.x - wall.x, this.miniboss.y - wall.y);
+      if (wallDist < 35) {
+        wall.hp -= CONFIG.WALL_DAMAGE * 1.5;
+        if (wall.hp <= 0) {
+          this.walls.splice(j, 1);
+          this.particleSystem.addExplosion(wall.x, wall.y, '#5d4037', 8);
+        }
+      }
+    }
+
+    if (this.miniboss.hp <= 0) {
+      this.player.wood += CONFIG.MINIBOSS_KILL_REWARD;
+      this.particleSystem.addExplosion(this.miniboss.x, this.miniboss.y, Colors.MINIBOSS, 20);
+      this.miniboss = null;
+    }
+  }
+
+  updatePowerUps() {
+    for (let i = this.powerups.length - 1; i >= 0; i--) {
+      const powerup = this.powerups[i];
+      const dist = Math.hypot(this.player.x - powerup.x, this.player.y - powerup.y);
+      
+      if (dist < 30) {
+        this.applyPowerUp(powerup);
+        this.particleSystem.addExplosion(powerup.x, powerup.y, powerup.color, 12);
+        this.powerups.splice(i, 1);
+      }
+    }
+  }
+
+  spawnPowerUp(x, y) {
+    const types = [PowerUpType.HEALTH, PowerUpType.DAMAGE, PowerUpType.SPEED];
+    const type = types[Math.floor(Math.random() * types.length)];
+    
+    let color = Colors.POWERUP_HEALTH;
+    if (type === PowerUpType.DAMAGE) color = Colors.POWERUP_DAMAGE;
+    if (type === PowerUpType.SPEED) color = Colors.POWERUP_SPEED;
+    
+    this.powerups.push({
+      x: x,
+      y: y,
+      type: type,
+      color: color,
+      lifetime: 300 // 5 seconds at 60fps
+    });
+  }
+
+  applyPowerUp(powerup) {
+    if (powerup.type === PowerUpType.HEALTH) {
+      this.player.hp = Math.min(this.player.maxHp, this.player.hp + 30);
+    } else if (powerup.type === PowerUpType.DAMAGE) {
+      this.player.damageMultiplier = Math.min(2.0, this.player.damageMultiplier + 0.3);
+      setTimeout(() => {
+        this.player.damageMultiplier = Math.max(1.0, this.player.damageMultiplier - 0.3);
+      }, 10000); // 10 second boost
+    } else if (powerup.type === PowerUpType.SPEED) {
+      this.player.speed = Math.min(10, this.player.speed + 2);
+      setTimeout(() => {
+        this.player.speed = CONFIG.PLAYER_SPEED;
+      }, 8000); // 8 second boost
     }
   }
 
@@ -486,6 +736,16 @@ class SurviveBros {
         }
       }
 
+      // Check miniboss collision
+      if (this.miniboss && !hit) {
+        const dist = Math.hypot(arrow.x - this.miniboss.x, arrow.y - this.miniboss.y);
+        if (dist < 18) {
+          this.miniboss.hp -= arrow.atk;
+          this.particleSystem.addExplosion(arrow.x, arrow.y, Colors.ACCENT, 7);
+          hit = true;
+        }
+      }
+
       if (
         arrow.x < 0 ||
         arrow.x > SCREEN_WIDTH ||
@@ -499,21 +759,50 @@ class SurviveBros {
     }
   }
 
+  checkWaveComplete() {
+    const isDaytime = this.time < CONFIG.NIGHT_START;
+    
+    if (isDaytime) {
+      return true; // Wave not in progress
+    }
+    
+    // During night, check if all enemies and bosses are defeated
+    if (this.enemies.length === 0 && !this.boss && !this.miniboss) {
+      return true;
+    }
+    
+    return false;
+  }
+
   update() {
     if (this.state !== GameState.PLAYING) return;
 
     this.updatePlayer(this.player);
     this.spawnEnemy();
+    this.spawnMiniBoss();
+    this.spawnBoss();
     this.updateEnemies();
     this.updateBoss();
-    this.spawnBoss();
+    this.updateMiniBoss();
     this.updateArrows();
+    this.updatePowerUps();
     this.particleSystem.update();
+
+    // Update power-up lifetimes
+    for (let i = this.powerups.length - 1; i >= 0; i--) {
+      this.powerups[i].lifetime--;
+      if (this.powerups[i].lifetime <= 0) {
+        this.powerups.splice(i, 1);
+      }
+    }
 
     this.time++;
     if (this.time >= CONFIG.DAY_LENGTH) {
-      this.time = 0;
-      this.wave++;
+      // Only advance wave if all enemies are defeated
+      if (this.checkWaveComplete()) {
+        this.time = 0;
+        this.wave++;
+      }
     }
 
     if (this.player.hp <= 0) {
@@ -550,14 +839,17 @@ class SurviveBros {
       '☀️ DAY: Harvest Trees to get Wood.',
       '🌙 NIGHT: Defend against Monsters.',
       '🛠️ BUILD: Press Z to place Walls (10 Wood).',
-      '⚔️ Click to shoot arrows at enemies.',
-      '👹 BOSS appears every 3 waves!'
+      '⚔️ Click to attack with current weapon.',
+      '🔄 Press X to Switch Weapons.',
+      '🛡️ Press C to Block (blocks damage).',
+      '👹 Mini-Boss appears every 3 waves!',
+      '👿 BOSS appears every 10 waves!'
     ];
 
     let y = SCREEN_HEIGHT / 2 + 80;
     for (const inst of instructions) {
       this.ctx.fillText(inst, 60, y);
-      y += 32;
+      y += 28;
     }
   }
 
@@ -570,7 +862,7 @@ class SurviveBros {
     this.ctx.fillStyle = Colors.DANGER;
     this.ctx.font = 'bold 72px Arial';
     this.ctx.textAlign = 'center';
-    this.ctx.fillText('NAH,ID WIN', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 3);
+    this.ctx.fillText('NAH, I\'D WIN', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 3);
 
     // Stats
     this.ctx.fillStyle = Colors.ACCENT;
@@ -598,7 +890,9 @@ class SurviveBros {
     this.drawWalls();
     this.drawArrows();
     this.drawEnemies();
+    this.drawMiniBoss();
     this.drawBoss();
+    this.drawPowerUps();
     this.drawPlayer(this.player, Colors.PLAYER);
 
     // Draw particles
@@ -624,6 +918,13 @@ class SurviveBros {
     this.ctx.strokeStyle = Colors.WHITE;
     this.ctx.lineWidth = 2;
     this.ctx.strokeRect(player.x - player.size / 2, player.y - player.size / 2, player.size, player.size);
+
+    // Block indicator
+    if (player.blocking) {
+      this.ctx.strokeStyle = Colors.PRIMARY;
+      this.ctx.lineWidth = 4;
+      this.ctx.strokeRect(player.x - 20, player.y - 20, 40, 40);
+    }
 
     // Weapon indicator
     if (player.weapon.type === WeaponType.BOW) {
@@ -669,6 +970,16 @@ class SurviveBros {
     for (const wall of this.walls) {
       this.ctx.fillStyle = '#5d4037';
       this.ctx.fillRect(wall.x - wall.size / 2, wall.y - wall.size / 2, wall.size, wall.size);
+
+      // Draw HP bar on wall
+      this.ctx.fillStyle = '#e74c3c';
+      const barWidth = 30;
+      this.ctx.fillRect(wall.x - barWidth / 2, wall.y - wall.size / 2 - 8, barWidth * (wall.hp / wall.maxHp), 3);
+
+      // Outline
+      this.ctx.strokeStyle = '#8d6e63';
+      this.ctx.lineWidth = 1;
+      this.ctx.strokeRect(wall.x - wall.size / 2, wall.y - wall.size / 2, wall.size, wall.size);
     }
   }
 
@@ -692,6 +1003,28 @@ class SurviveBros {
     }
   }
 
+  drawMiniBoss() {
+    if (!this.miniboss) return;
+
+    this.ctx.fillStyle = Colors.MINIBOSS;
+    this.ctx.fillRect(this.miniboss.x - this.miniboss.size / 2, this.miniboss.y - this.miniboss.size / 2, this.miniboss.size, this.miniboss.size);
+
+    this.ctx.strokeStyle = Colors.WHITE;
+    this.ctx.lineWidth = 2;
+    this.ctx.strokeRect(this.miniboss.x - this.miniboss.size / 2, this.miniboss.y - this.miniboss.size / 2, this.miniboss.size, this.miniboss.size);
+
+    // MiniBoss HP bar
+    this.ctx.fillStyle = Colors.MINIBOSS;
+    const barWidth = 50;
+    this.ctx.fillRect(this.miniboss.x - barWidth / 2, this.miniboss.y - this.miniboss.size / 2 - 10, barWidth * (this.miniboss.hp / this.miniboss.maxHp), 5);
+
+    // Draw mini-boss label
+    this.ctx.fillStyle = Colors.MINIBOSS;
+    this.ctx.font = '12px Arial';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText('Mini-Boss', this.miniboss.x, this.miniboss.y - this.miniboss.size / 2 - 20);
+  }
+
   drawBoss() {
     if (!this.boss) return;
 
@@ -706,6 +1039,37 @@ class SurviveBros {
     this.ctx.fillStyle = '#e74c3c';
     const barWidth = 60;
     this.ctx.fillRect(this.boss.x - barWidth / 2, this.boss.y - this.boss.size / 2 - 10, barWidth * (this.boss.hp / this.boss.maxHp), 5);
+
+    // Draw boss label
+    this.ctx.fillStyle = Colors.BOSS;
+    this.ctx.font = '14px Arial';
+    this.ctx.textAlign = 'center';
+    this.ctx.fillText('BOSS', this.boss.x, this.boss.y - this.boss.size / 2 - 20);
+
+    // Draw sword indicator on boss
+    const swordOffset = 20;
+    this.ctx.strokeStyle = '#bdc3c7';
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.moveTo(this.boss.x + Math.cos(this.boss.angle) * swordOffset, this.boss.y + Math.sin(this.boss.angle) * swordOffset);
+    this.ctx.lineTo(this.boss.x + Math.cos(this.boss.angle) * (swordOffset + 15), this.boss.y + Math.sin(this.boss.angle) * (swordOffset + 15));
+    this.ctx.stroke();
+  }
+
+  drawPowerUps() {
+    for (const powerup of this.powerups) {
+      this.ctx.fillStyle = powerup.color;
+      this.ctx.beginPath();
+      this.ctx.arc(powerup.x, powerup.y, 8, 0, Math.PI * 2);
+      this.ctx.fill();
+
+      // Outline
+      this.ctx.strokeStyle = Colors.WHITE;
+      this.ctx.lineWidth = 1;
+      this.ctx.beginPath();
+      this.ctx.arc(powerup.x, powerup.y, 8, 0, Math.PI * 2);
+      this.ctx.stroke();
+    }
   }
 
   drawHUD() {
@@ -716,10 +1080,34 @@ class SurviveBros {
     this.ctx.fillText(`Wave: ${this.wave}`, 20, 30);
     this.ctx.fillText(`Wood: ${Math.floor(this.player.wood)}`, 20, 60);
     this.ctx.fillText(`HP: ${Math.floor(this.player.hp)}`, 20, 90);
+    this.ctx.fillText(`Weapon: ${this.player.weapon.name} (Press X)`, 20, 120);
+
+    // Damage multiplier indicator
+    if (this.player.damageMultiplier > 1.0) {
+      this.ctx.fillStyle = Colors.POWERUP_DAMAGE;
+      this.ctx.fillText(`DMG Boost: ${this.player.damageMultiplier.toFixed(1)}x`, 20, 150);
+    }
+
+    // Block cooldown indicator
+    if (this.player.blockCooldown > 0) {
+      this.ctx.fillStyle = Colors.DANGER;
+      this.ctx.fillText(`Block cooldown: ${Math.ceil(this.player.blockCooldown / 60)}s`, 20, 180);
+    } else {
+      this.ctx.fillStyle = Colors.PRIMARY;
+      this.ctx.fillText('Block available (Press C)', 20, 180);
+    }
 
     const isDaytime = this.time < CONFIG.NIGHT_START;
     this.ctx.fillStyle = isDaytime ? Colors.ACCENT : Colors.PRIMARY;
-    this.ctx.fillText(isDaytime ? '☀️ DAY' : '🌙 NIGHT', SCREEN_WIDTH - 150, 30);
+    this.ctx.textAlign = 'right';
+    this.ctx.fillText(isDaytime ? '☀️ DAY' : '🌙 NIGHT', SCREEN_WIDTH - 20, 30);
+
+    // Show wave completion status during night
+    if (!isDaytime) {
+      const enemyCount = this.enemies.length + (this.boss ? 1 : 0) + (this.miniboss ? 1 : 0);
+      this.ctx.fillStyle = Colors.ACCENT;
+      this.ctx.fillText(`Enemies: ${enemyCount}`, SCREEN_WIDTH - 20, 60);
+    }
   }
 
   startGame() {
@@ -732,12 +1120,18 @@ class SurviveBros {
     this.player.maxHp = CONFIG.INITIAL_HP;
     this.player.wood = CONFIG.INITIAL_WOOD;
     this.player.attackCooldown = 0;
+    this.player.blocking = false;
+    this.player.blockCooldown = 0;
+    this.player.damageMultiplier = 1.0;
 
     this.trees = [];
     this.enemies = [];
     this.arrows = [];
     this.walls = [];
     this.boss = null;
+    this.miniboss = null;
+    this.powerups = [];
+    this.waveComplete = false;
 
     this.initializeWorld();
   }
