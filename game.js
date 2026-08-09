@@ -42,7 +42,12 @@ const Colors = {
   LIGHT_BG: '#1e1e28',
   POWERUP_HEALTH: '#ff6b6b',
   POWERUP_DAMAGE: '#ffa502',
-  POWERUP_SPEED: '#64dfdf'
+  POWERUP_SPEED: '#64dfdf',
+  SWORD_BLADE: '#e8e8e8',
+  SWORD_EDGE: '#c0c0c0',
+  SWORD_HILT: '#8b4513',
+  SWORD_GUARD: '#daa520',
+  SWORD_HANDLE: '#a0522d'
 };
 
 // Weapons
@@ -902,6 +907,50 @@ class SurviveBros {
     this.drawHUD();
   }
 
+  drawSword(x, y, angle, swing = 0) {
+    this.ctx.save();
+    this.ctx.translate(x, y);
+    this.ctx.rotate(angle);
+
+    // Apply swing animation
+    const swingRotation = (swing / 8) * (Math.PI / 4);
+    this.ctx.rotate(swingRotation);
+
+    // Blade (main part)
+    this.ctx.fillStyle = Colors.SWORD_BLADE;
+    this.ctx.fillRect(0, -3, 50, 6); // Long blade
+
+    // Blade edge highlight
+    this.ctx.fillStyle = Colors.SWORD_EDGE;
+    this.ctx.fillRect(0, -2, 50, 2);
+
+    // Crossguard
+    this.ctx.fillStyle = Colors.SWORD_GUARD;
+    this.ctx.fillRect(-12, -5, 24, 10);
+
+    // Hilt/handle
+    this.ctx.fillStyle = Colors.SWORD_HILT;
+    this.ctx.fillRect(-4, -4, 8, 16); // Handle
+
+    // Handle grip pattern
+    this.ctx.strokeStyle = '#654321';
+    this.ctx.lineWidth = 1;
+    for (let i = 0; i < 4; i++) {
+      this.ctx.beginPath();
+      this.ctx.moveTo(-3, 0 + i * 3);
+      this.ctx.lineTo(3, 0 + i * 3);
+      this.ctx.stroke();
+    }
+
+    // Pommel (end of handle)
+    this.ctx.fillStyle = Colors.SWORD_GUARD;
+    this.ctx.beginPath();
+    this.ctx.arc(0, 12, 3, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    this.ctx.restore();
+  }
+
   drawPlayer(player, color) {
     // Glow
     const gradient = this.ctx.createRadialGradient(player.x, player.y, 0, player.x, player.y, 25);
@@ -926,8 +975,9 @@ class SurviveBros {
       this.ctx.strokeRect(player.x - 20, player.y - 20, 40, 40);
     }
 
-    // Weapon indicator
+    // Weapon rendering
     if (player.weapon.type === WeaponType.BOW) {
+      // Draw bow
       const bowLength = 20;
       this.ctx.strokeStyle = player.weapon.color;
       this.ctx.lineWidth = 3;
@@ -935,19 +985,9 @@ class SurviveBros {
       this.ctx.moveTo(player.x, player.y);
       this.ctx.lineTo(player.x + Math.cos(player.angle) * bowLength, player.y + Math.sin(player.angle) * bowLength);
       this.ctx.stroke();
-    }
-
-    // Draw sword swing arc
-    if (player.weapon.type === WeaponType.SWORD && player.swing > 0) {
-      const progress = player.swing / 8;
-      const arcRadius = player.weapon.range || 80;
-      this.ctx.beginPath();
-      this.ctx.strokeStyle = player.weapon.color;
-      this.ctx.lineWidth = 4;
-      const startAngle = player.angle - Math.PI / 4 * progress;
-      const endAngle = player.angle + Math.PI / 4 * progress;
-      this.ctx.arc(player.x, player.y, arcRadius * 0.6, startAngle, endAngle);
-      this.ctx.stroke();
+    } else if (player.weapon.type === WeaponType.SWORD) {
+      // Draw detailed sword model
+      this.drawSword(player.x, player.y, player.angle, player.swing);
     }
   }
 
@@ -1046,14 +1086,10 @@ class SurviveBros {
     this.ctx.textAlign = 'center';
     this.ctx.fillText('BOSS', this.boss.x, this.boss.y - this.boss.size / 2 - 20);
 
-    // Draw sword indicator on boss
-    const swordOffset = 20;
-    this.ctx.strokeStyle = '#bdc3c7';
-    this.ctx.lineWidth = 2;
-    this.ctx.beginPath();
-    this.ctx.moveTo(this.boss.x + Math.cos(this.boss.angle) * swordOffset, this.boss.y + Math.sin(this.boss.angle) * swordOffset);
-    this.ctx.lineTo(this.boss.x + Math.cos(this.boss.angle) * (swordOffset + 15), this.boss.y + Math.sin(this.boss.angle) * (swordOffset + 15));
-    this.ctx.stroke();
+    // Draw detailed sword on boss
+    if (this.boss.hasSword) {
+      this.drawSword(this.boss.x, this.boss.y, this.boss.angle, 0);
+    }
   }
 
   drawPowerUps() {
