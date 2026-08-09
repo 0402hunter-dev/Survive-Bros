@@ -40,7 +40,7 @@ const WEAPONS = {
     type: WeaponType.SWORD,
     name: 'Iron Sword',
     atk: 25,
-    speed: 1.5,
+    speed: 1.5, // higher => faster attacks
     range: 80,
     cost: 0,
     color: '#bdc3c7',
@@ -50,11 +50,12 @@ const WEAPONS = {
     type: WeaponType.BOW,
     name: 'Wood Bow',
     atk: 20,
-    speed: 1.0,
+    speed: 1.0, // influences cooldown and arrow speed
     range: 400,
     cost: 0,
     color: '#8b4513',
-    projectiles: 1
+    projectiles: 1,
+    arrowSpeed: 15
   }
 };
 
@@ -63,7 +64,7 @@ const CONFIG = {
   PLAYER_SPEED: 5,
   ENEMY_SPEED: 2.2,
   BOSS_SPEED_BASE: 1.8,
-  ARROW_SPEED: 15,
+  ARROW_SPEED: 15, // fallback if weapon doesn't provide arrowSpeed
   ENEMY_DAMAGE: 0.5,
   BOSS_DAMAGE_BASE: 1.2,
   INITIAL_HP: 100,
@@ -184,7 +185,8 @@ class SurviveBros {
       weapon: WEAPONS['iron-sword'],
       speed: CONFIG.PLAYER_SPEED,
       swing: 0,
-      size: 15
+      size: 15,
+      attackCooldown: 0
     };
 
     this.player2 = {
@@ -198,7 +200,8 @@ class SurviveBros {
       weapon: WEAPONS['wood-bow'],
       speed: CONFIG.PLAYER_SPEED,
       swing: 0,
-      size: 15
+      size: 15,
+      attackCooldown: 0
     };
 
     this.trees = [];
@@ -235,9 +238,10 @@ class SurviveBros {
       this.mouseY = e.clientY - rect.top;
     });
 
-    this.canvas.addEventListener('click', () => {
+    // Use pointerdown to support touch and mouse consistently
+    this.canvas.addEventListener('pointerdown', (ev) => {
       if (this.state === GameState.PLAYING) {
-        this.handleMouseClick(this.player);
+        this.handleAttack(this.player);
       }
     });
   }
@@ -302,34 +306,73 @@ class SurviveBros {
     this.particleSystem.addExplosion(this.boss.x, this.boss.y, Colors.BOSS, 15);
   }
 
-  handleMouseClick(player) {
-    if (player.weapon.type === WeaponType.BOW) {
-      this.fireArrow(player);
+  // New unified attack handler for players
+  handleAttack(player) {
+    // Check cooldown
+    if (player.attackCooldown > 0) return;
+
+    const weapon = player.weapon;
+    if (!weapon) return;
+
+    // Determine cooldown based on weapon.speed (higher speed -> lower cooldown)
+    // Base cooldown frames: 30 (0.5s at 60fps) divided by speed
+    const baseCooldown = Math.max(6, Math.floor(30 / (weapon.speed || 1)));
+    player.attackCooldown = baseCooldown;
+
+    if (weapon.type === WeaponType.BOW) {
+      this.fireBow(player);
+    } else if (weapon.type === WeaponType.SWORD) {
+      this.swingSword(player);
     }
   }
 
-  fireArrow(player) {
+  swingSword(player) {
     const weapon = player.weapon;
-    const arrow = {
-      x: player.x,
-      y: player.y,
-      angle: player.angle,
-      life: 120,
-      atk: weapon.atk
-    };
-    this.arrows.push(arrow);
+    player.swing = 8; // frames of swing animation
+
+    // Damage enemies within range
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const enemy = this.enemies[i];
+      const dist = Math.hypot(player.x - enemy.x, player.y - enemy.y);
+      if (dist <= weapon.range) {
+        enemy.hp -= weapon.atk;
+        this.particleSystem.addExplosion(enemy.x, enemy.y, Colors.ACCENT, 6);
+        // Kill/award handled in updateEnemies when hp <= 0
+      }
+    }
+
+    // Damage boss if in range
+    if (this.boss) {
+      const distB = Math.hypot(player.x - this.boss.x, player.y - this.boss.y);
+      if (distB <= weapon.range) {
+        this.boss.hp -= weapon.atk;
+        this.particleSystem.addExplosion(this.boss.x, this.boss.y, Colors.ACCENT, 10);
+      }
+    }
   }
 
-  placeWall(x, y) {
-    if (this.player.wood < CONFIG.WALL_COST) return;
-    this.player.wood -= CONFIG.WALL_COST;
-    this.walls.push({
-      x: x,
-      y: y,
-      hp: CONFIG.WALL_HP,
-      size: 40
-    });
-    this.particleSystem.addExplosion(x, y, Colors.PRIMARY, 5);
+  fireBow(player) {
+    const weapon = player.weapon;
+    const projectiles = weapon.projectiles || 1;
+    const spread = 0.1; // radians total spread when firing multiple arrows
+    const arrowSpeed = weapon.arrowSpeed || CONFIG.ARROW_SPEED;
+    const baseAngle = player.angle;
+
+    for (let i = 0; i < projectiles; i++) {
+      const t = projectiles === 1 ? 0.5 : i / (projectiles - 1);
+      const angle = baseAngle + (t - 0.5) * spread;
+      const arrow = {
+        x: player.x + Math.cos(angle) * 10,
+        y: player.y + Math.sin(angle) * 10,
+        angle: angle,
+        life: Math.floor((weapon.range || 400) / arrowSpeed) * 4, // generous life
+        atk: weapon.atk,
+        speed: arrowSpeed
+      };
+      this.arrows.push(arrow);
+    }
+
+    this.particleSystem.addExplosion(player.x + Math.cos(baseAngle) * 12, player.y + Math.sin(baseAngle) * 12, weapon.color || Colors.ACCENT, 4);
   }
 
   updatePlayer(player) {
@@ -349,6 +392,9 @@ class SurviveBros {
     player.x = Math.max(20, Math.min(SCREEN_WIDTH - 20, player.x + mx));
     player.y = Math.max(20, Math.min(SCREEN_HEIGHT - 20, player.y + my));
     player.angle = Math.atan2(this.mouseY - player.y, this.mouseX - player.x);
+
+    if (player.attackCooldown > 0) player.attackCooldown--;
+    if (player.swing > 0) player.swing--;
   }
 
   updateEnemies() {
@@ -411,8 +457,9 @@ class SurviveBros {
   updateArrows() {
     for (let i = this.arrows.length - 1; i >= 0; i--) {
       const arrow = this.arrows[i];
-      arrow.x += Math.cos(arrow.angle) * CONFIG.ARROW_SPEED;
-      arrow.y += Math.sin(arrow.angle) * CONFIG.ARROW_SPEED;
+      const spd = arrow.speed || CONFIG.ARROW_SPEED;
+      arrow.x += Math.cos(arrow.angle) * spd;
+      arrow.y += Math.sin(arrow.angle) * spd;
       arrow.life--;
 
       let hit = false;
@@ -588,6 +635,19 @@ class SurviveBros {
       this.ctx.lineTo(player.x + Math.cos(player.angle) * bowLength, player.y + Math.sin(player.angle) * bowLength);
       this.ctx.stroke();
     }
+
+    // Draw sword swing arc
+    if (player.weapon.type === WeaponType.SWORD && player.swing > 0) {
+      const progress = player.swing / 8;
+      const arcRadius = player.weapon.range || 80;
+      this.ctx.beginPath();
+      this.ctx.strokeStyle = player.weapon.color;
+      this.ctx.lineWidth = 4;
+      const startAngle = player.angle - Math.PI / 4 * progress;
+      const endAngle = player.angle + Math.PI / 4 * progress;
+      this.ctx.arc(player.x, player.y, arcRadius * 0.6, startAngle, endAngle);
+      this.ctx.stroke();
+    }
   }
 
   drawTrees() {
@@ -671,6 +731,7 @@ class SurviveBros {
     this.player.hp = CONFIG.INITIAL_HP;
     this.player.maxHp = CONFIG.INITIAL_HP;
     this.player.wood = CONFIG.INITIAL_WOOD;
+    this.player.attackCooldown = 0;
 
     this.trees = [];
     this.enemies = [];
