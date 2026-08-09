@@ -570,7 +570,7 @@ class SurviveBros {
     this.ctx.fillStyle = Colors.DANGER;
     this.ctx.font = 'bold 72px Arial';
     this.ctx.textAlign = 'center';
-    this.ctx.fillText('NAH, YOU DIED', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 3);
+    this.ctx.fillText('NAH,ID WIN', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 3);
 
     // Stats
     this.ctx.fillStyle = Colors.ACCENT;
@@ -579,7 +579,7 @@ class SurviveBros {
 
     // Retry text
     this.ctx.fillStyle = Colors.PRIMARY;
-    this.ctx.fillText('Press SPACE to Retry', SCREEN_WIDTH / 2, (SCREEN_HEIGHT * 2) / 3);
+    this.ctx.fillText('Press SPACE to try to not die', SCREEN_WIDTH / 2, (SCREEN_HEIGHT * 2) / 3);
   }
 
   drawGame() {
