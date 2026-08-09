@@ -570,7 +570,7 @@ class SurviveBros {
     this.ctx.fillStyle = Colors.DANGER;
     this.ctx.font = 'bold 72px Arial';
     this.ctx.textAlign = 'center';
-    this.ctx.fillText('NAH YOU DIED', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 3);
+    this.ctx.fillText('NAH, YOU DIED', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 3);
 
     // Stats
     this.ctx.fillStyle = Colors.ACCENT;
