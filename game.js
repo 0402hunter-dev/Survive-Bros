@@ -114,9 +114,6 @@ const CONFIG = {
   BOSS_DAMAGE_BASE: 1.2,
   INITIAL_HP: 100,
   INITIAL_WOOD: 20,
-  WALL_COST: 10,
-  WALL_HP: 200,
-  WALL_DAMAGE: 0.5,
   ENEMY_KILL_REWARD: 5,
   MINI_BOSS_KILL_REWARD: 75,
   BOSS_KILL_REWARD: 150,
@@ -218,7 +215,6 @@ class SurviveBros {
     this.keysPressed = new Set();
     this.mouseX = SCREEN_WIDTH / 2;
     this.mouseY = SCREEN_HEIGHT / 2;
-    this.autoStartCountdown = 120; // auto-start in 2 seconds
 
     this.particleSystem = new ParticleSystem();
 
@@ -260,7 +256,6 @@ class SurviveBros {
     this.trees = [];
     this.enemies = [];
     this.arrows = [];
-    this.walls = [];
     this.miniBoss = null;
     this.boss = null;
     this.waveCleared = false;
@@ -280,9 +275,6 @@ class SurviveBros {
       }
       if (e.key === ' ' && this.state === GameState.SHOP) {
         this.resumeGame();
-      }
-      if (e.key.toLowerCase() === 'z') {
-        this.placeWall(this.player.x, this.player.y);
       }
     });
 
@@ -319,18 +311,6 @@ class SurviveBros {
       y: 50 + Math.random() * (SCREEN_HEIGHT - 100),
       scale: 0.8 + Math.random() * 0.5
     });
-  }
-
-  placeWall(x, y) {
-    if (this.player.wood >= CONFIG.WALL_COST) {
-      this.player.wood -= CONFIG.WALL_COST;
-      this.walls.push({
-        x: x,
-        y: y,
-        hp: CONFIG.WALL_HP,
-        size: 30
-      });
-    }
   }
 
   spawnEnemy() {
@@ -704,11 +684,6 @@ class SurviveBros {
     this.ctx.font = '48px Arial';
     this.ctx.fillText('Press SPACE to Start', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 40);
 
-    // Auto-start countdown
-    this.ctx.fillStyle = Colors.WHITE;
-    this.ctx.font = '20px Arial';
-    this.ctx.fillText(`Auto-starting in ${Math.ceil(this.autoStartCountdown / 60)}s...`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 20);
-
     // Instructions
     this.ctx.fillStyle = Colors.WHITE;
     this.ctx.font = '16px Arial';
@@ -716,7 +691,6 @@ class SurviveBros {
     const instructions = [
       '☀️ DAY: Harvest Trees to get Wood.',
       '🌙 NIGHT: Defend against Monsters.',
-      '🛠️ BUILD: Press Z to place Walls (10 Wood).',
       '⚔️ Click to attack enemies.',
       '👹 Mini-Boss every 3 waves | BOSS every 10 waves!'
     ];
@@ -870,7 +844,6 @@ class SurviveBros {
 
     // Draw entities
     this.drawTrees();
-    this.drawWalls();
     this.drawArrows();
     this.drawEnemies();
     this.drawMiniBoss();
@@ -938,18 +911,6 @@ class SurviveBros {
       this.ctx.beginPath();
       this.ctx.arc(tree.x, tree.y - 10 * tree.scale, 15 * tree.scale, 0, Math.PI * 2);
       this.ctx.fill();
-    }
-  }
-
-  drawWalls() {
-    for (const wall of this.walls) {
-      this.ctx.fillStyle = '#5d4037';
-      this.ctx.fillRect(wall.x - wall.size / 2, wall.y - wall.size / 2, wall.size, wall.size);
-
-      // Wall HP bar
-      this.ctx.fillStyle = '#27ae60';
-      const barWidth = 30;
-      this.ctx.fillRect(wall.x - barWidth / 2, wall.y - wall.size / 2 - 8, barWidth * (wall.hp / CONFIG.WALL_HP), 3);
     }
   }
 
@@ -1068,7 +1029,6 @@ class SurviveBros {
     this.time = 0;
     this.wave = 1;
     this.frameCount = 0;
-    this.autoStartCountdown = 120;
 
     this.player.hp = CONFIG.INITIAL_HP;
     this.player.maxHp = CONFIG.INITIAL_HP;
@@ -1082,7 +1042,6 @@ class SurviveBros {
     this.trees = [];
     this.enemies = [];
     this.arrows = [];
-    this.walls = [];
     this.miniBoss = null;
     this.boss = null;
     this.waveCleared = false;
@@ -1109,21 +1068,8 @@ class SurviveBros {
     requestAnimationFrame(() => this.gameLoop());
   }
 
-  updateTitleScreen() {
-    this.autoStartCountdown--;
-    if (this.autoStartCountdown <= 0) {
-      this.startGame();
-    }
-  }
-
   start() {
     this.gameLoop();
-    // Update title screen countdown
-    setInterval(() => {
-      if (this.state === GameState.TITLE) {
-        this.updateTitleScreen();
-      }
-    }, 16); // ~60fps
   }
 }
 
