@@ -10,7 +10,7 @@
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: Arial, sans-serif;
             background: #0a0a14;
@@ -20,33 +20,39 @@
             min-height: 100vh;
             color: #fff;
         }
-        
+
         canvas {
+            max-width: 100%;
+            height: auto;
             border: 3px solid #2ecb71;
             background: #141828;
             box-shadow: 0 0 20px rgba(46, 203, 113, 0.3);
+            image-rendering: pixelated;
         }
-        
+
         .container {
+            width: min(100%, 1280px);
+            padding: 16px;
             text-align: center;
         }
-        
+
         h1 {
             color: #2ecb71;
             margin-bottom: 20px;
             text-shadow: 0 0 10px rgba(46, 203, 113, 0.5);
         }
-        
+
         #loading {
             color: #f1c40f;
             font-size: 18px;
             margin-bottom: 10px;
         }
-        
+
         .controls {
             margin-top: 20px;
             color: #aaa;
             font-size: 14px;
+            line-height: 1.8;
         }
     </style>
 </head>
@@ -62,5 +68,6 @@
     </div>
 
     <script src="game.js"></script>
+    <script src="voxel.js"></script>
 </body>
 </html>
